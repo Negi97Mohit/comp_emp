@@ -57,7 +57,7 @@ class LinkedInBot:
 
     def search_em(self):
         """Enter keywords into the search bar"""
-        em_df=pd.DataFrame(columns=['Name', 'Current', 'Position', 'Education 1', 'Education 2'])
+        em_df=pd.DataFrame(columns=['Name', 'Current', 'Position', 'Highest Education', 'Education 2'])
         full_em=False
         em_li=[]
         while True:
@@ -112,16 +112,46 @@ class LinkedInBot:
             except Exception as e:
                 print(f"Error processing element: {e}")
                 continue
-
         # Create DataFrame
-        columns = ["Name", "Current Position", "Education 1", "Education 2"]
+        columns = ["Name", "Current Position", "Highest Education", "Education 2"]
         em_df = pd.DataFrame(data, columns=columns)
-        # Remove duplicate rows
-        em_df.drop_duplicates(inplace=True)
 
+        # Merge rows for repeating names
+        merged_data = {}
+        for _, row in em_df.iterrows():
+            key = (row['Name'], row['Current Position'])
+            if key not in merged_data:
+                merged_data[key] = [row['Highest Education'], row['Education 2']]
+            else:
+                if merged_data[key][1] is None:
+                    merged_data[key][1] = row['Highest Education']
+                elif row['Highest Education'] not in merged_data[key]:
+                    merged_data[key].append(row['Highest Education'])
+
+        # Prepare final data for DataFrame
+        final_data = []
+        for (name, curr_position), education in merged_data.items():
+            # Ensure the list has exactly 3 elements: Highest Education, Education 2, None
+            while len(education) < 3:
+                education.append(None)
+            final_data.append([name, curr_position] + education[:2])
+            
+        # # Create DataFrame
+        columns = ["Name", "Current Position", "Highest Education", "Education 2"]
+        em_df = pd.DataFrame(final_data, columns=columns)
+        # # Remove duplicate rows
+        em_df.drop_duplicates(inplace=True)
+        if em_df['Highest Education'].equals(em_df['Education 2']):
+            em_df = em_df.drop(columns=['Education 2'])
         # Save DataFrame to CSV
         em_df.to_csv('employee_data.csv', index=False)
         st.write(em_df)
+        # EDA - Plotting
+        fig = px.bar(em_df['Highest Education'].value_counts().reset_index().rename(columns={'index': 'Highest Education', 'Highest Education': 'Count'}),
+                    y='Count', x='Highest Education', orientation='v', title='Education Distribution of EMPS')
+
+        # Display the plot in Streamlit
+        st.plotly_chart(fig)
 
 
 
@@ -150,30 +180,19 @@ def main():
     st.set_page_config(layout="wide") 
     st.title("Where do Companies hire from?? ")
 
-    col1, col2 = st.columns([1, 1])
-    with col1:
-        # Scrape LinkedIn Jobs
-        st.header("Company Personnel DA & DE")
-        st.write("Enter your LinkedIn credentials and search criteria below to get poster Company Data  .")
+    # Scrape LinkedIn Jobs
+    st.header("Company Personnel DA & DE")
+    st.write("Enter your LinkedIn credentials and search criteria below to get poster Company Data  .")
 
-        email = st.text_input("Email")
-        password = st.text_input("Password", type="password")
-        company = st.text_input("company")
+    email = st.text_input("Email")
+    password = st.text_input("Password", type="password")
+    company = st.text_input("company")
 
 
-        if st.button("Scrape People"):
-            bot = LinkedInBot()
-            bot.run(email, password, company)
-            st.success("People scraping completed!")
-
-    with col2:
-        em_df=pd.read_csv('employee_data.csv')
-        # EDA - Plotting
-        fig = px.bar(em_df['Education 1'].value_counts().reset_index().rename(columns={'index': 'Education 1', 'Education 1': 'Count'}),
-                    y='Count', x='Education 1', orientation='v', title='Education Distribution of EMPS')
-
-        # Display the plot in Streamlit
-        st.plotly_chart(fig)
+    if st.button("Scrape People"):
+        bot = LinkedInBot()
+        bot.run(email, password, company)
+        st.success("People scraping completed!")
 
 
 if __name__ == "__main__":
